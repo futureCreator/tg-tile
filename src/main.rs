@@ -230,8 +230,27 @@ fn make_tip(s: &str) -> [u16; 128] {
 }
 
 #[cfg(windows)]
+const ICON_ICO: &[u8] = include_bytes!("../resources/tg-tile.ico");
+
+#[cfg(windows)]
+unsafe fn load_embedded_icon() -> HICON {
+    // Parse ICO: offset at bytes 18..22, size at bytes 14..18 of first entry
+    let offset = u32::from_le_bytes(ICON_ICO[18..22].try_into().unwrap()) as usize;
+    let size = u32::from_le_bytes(ICON_ICO[14..18].try_into().unwrap()) as usize;
+    CreateIconFromResourceEx(
+        &ICON_ICO[offset..offset + size],
+        true,
+        0x00030000,
+        16,
+        16,
+        LR_DEFAULTCOLOR,
+    )
+    .unwrap_or_else(|_| LoadIconW(None, IDI_APPLICATION).unwrap())
+}
+
+#[cfg(windows)]
 unsafe fn add_tray_icon(hwnd: HWND) {
-    let icon = LoadIconW(None, IDI_APPLICATION).unwrap();
+    let icon = load_embedded_icon();
     let nid = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
         hWnd: hwnd,
