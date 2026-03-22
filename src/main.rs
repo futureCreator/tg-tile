@@ -179,7 +179,13 @@ fn tile_windows() {
     let rects = calculate_grid(hwnds.len(), work_x, work_y, work_w, work_h, GAP);
 
     unsafe {
-        for (hwnd, rect) in hwnds.iter().zip(rects.iter()) {
+        // First, gain foreground rights by activating any Telegram window
+        if let Some(&first) = hwnds.first() {
+            let _ = SetForegroundWindow(first);
+        }
+
+        // Now position and bring each window to top (reverse order so first ends up on top)
+        for (hwnd, rect) in hwnds.iter().zip(rects.iter()).rev() {
             let _ = SetWindowPos(
                 *hwnd,
                 Some(HWND_TOP),
@@ -187,14 +193,9 @@ fn tile_windows() {
                 rect.y,
                 rect.w,
                 rect.h,
-                SWP_NOACTIVATE,
+                SWP_SHOWWINDOW,
             );
-        }
-
-        // Hotkey handler has foreground rights — activate first window
-        // to bring all Telegram windows above other apps
-        if let Some(&first) = hwnds.first() {
-            let _ = SetForegroundWindow(first);
+            let _ = BringWindowToTop(*hwnd);
         }
     }
 }
