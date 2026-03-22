@@ -1,12 +1,14 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 #[cfg(windows)]
 use windows::{
     core::*,
     Win32::Foundation::*,
     Win32::Graphics::Gdi::*,
-    Win32::System::Console::*,
     Win32::System::Threading::*,
     Win32::UI::HiDpi::*,
     Win32::UI::Input::KeyboardAndMouse::*,
+    Win32::UI::Shell::*,
     Win32::UI::WindowsAndMessaging::*,
 };
 
@@ -14,8 +16,6 @@ use windows::{
 use std::ffi::OsString;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStringExt;
-#[cfg(windows)]
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A rectangle representing a window position and size
 #[derive(Debug, Clone, PartialEq)]
@@ -79,24 +79,20 @@ fn find_telegram_windows() -> Vec<HWND> {
 unsafe extern "system" fn enum_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let windows = &mut *(lparam.0 as *mut Vec<HWND>);
 
-    // Must be visible
     if !IsWindowVisible(hwnd).as_bool() {
         return TRUE;
     }
 
-    // Check extended style: skip tool windows
     let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
     if ex_style & WS_EX_TOOLWINDOW.0 != 0 {
         return TRUE;
     }
 
-    // Must have a non-empty title
     let title_len = GetWindowTextLengthW(hwnd);
     if title_len == 0 {
         return TRUE;
     }
 
-    // Check if this window belongs to Telegram.exe
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
@@ -155,15 +151,22 @@ fn get_work_area() -> (i32, i32, i32, i32) {
 const GAP: i32 = 4;
 
 #[cfg(windows)]
+const WM_TRAY: u32 = WM_APP + 1;
+#[cfg(windows)]
+const HOTKEY_ID: i32 = 1;
+#[cfg(windows)]
+const IDM_TILE: usize = 1001;
+#[cfg(windows)]
+const IDM_EXIT: usize = 1002;
+
+#[cfg(windows)]
 fn tile_windows() {
     let hwnds = find_telegram_windows();
 
     if hwnds.is_empty() {
-        println!("[tg-tile] 열린 텔레그램 창이 없습니다");
         return;
     }
 
-    // Restore minimized windows
     unsafe {
         for &hwnd in &hwnds {
             if IsIconic(hwnd).as_bool() {
@@ -174,9 +177,6 @@ fn tile_windows() {
 
     let (work_x, work_y, work_w, work_h) = get_work_area();
     let rects = calculate_grid(hwnds.len(), work_x, work_y, work_w, work_h, GAP);
-
-    let cols = (hwnds.len() as f64).sqrt().ceil() as usize;
-    let rows = (hwnds.len() as f64 / cols as f64).ceil() as usize;
 
     unsafe {
         for (hwnd, rect) in hwnds.iter().zip(rects.iter()) {
@@ -191,21 +191,12 @@ fn tile_windows() {
             );
         }
     }
-
-    println!(
-        "[tg-tile] {}개 창 배열 완료 ({}x{})",
-        hwnds.len(),
-        rows,
-        cols,
-    );
 }
 
 #[cfg(windows)]
 fn init_dpi() {
     unsafe {
-        if SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2).is_err() {
-            eprintln!("[tg-tile] 경고: DPI 인식 설정 실패 (Windows 10 1703 이상 필요)");
-        }
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 }
 
@@ -218,32 +209,101 @@ fn ensure_single_instance() -> Option<HANDLE> {
         match handle {
             Ok(h) => {
                 if GetLastError() == ERROR_ALREADY_EXISTS {
-                    println!("[tg-tile] 이미 실행 중입니다");
                     let _ = CloseHandle(h);
                     None
                 } else {
                     Some(h)
                 }
             }
-            Err(_) => {
-                println!("[tg-tile] Mutex 생성 실패");
-                None
-            }
+            Err(_) => None,
         }
     }
 }
 
 #[cfg(windows)]
-static RUNNING: AtomicBool = AtomicBool::new(true);
+fn make_tip(s: &str) -> [u16; 128] {
+    let mut tip = [0u16; 128];
+    for (i, c) in s.encode_utf16().take(127).enumerate() {
+        tip[i] = c;
+    }
+    tip
+}
 
 #[cfg(windows)]
-unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> BOOL {
-    if ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_CLOSE_EVENT {
-        RUNNING.store(false, Ordering::SeqCst);
-        PostQuitMessage(0);
-        TRUE
-    } else {
-        FALSE
+unsafe fn add_tray_icon(hwnd: HWND) {
+    let icon = LoadIconW(None, IDI_APPLICATION).unwrap();
+    let nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
+        uCallbackMessage: WM_TRAY,
+        hIcon: icon,
+        szTip: make_tip("tg-tile (Win+Shift+G)"),
+        ..Default::default()
+    };
+    Shell_NotifyIconW(NIM_ADD, &nid);
+}
+
+#[cfg(windows)]
+unsafe fn remove_tray_icon(hwnd: HWND) {
+    let nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: 1,
+        ..Default::default()
+    };
+    Shell_NotifyIconW(NIM_DELETE, &nid);
+}
+
+#[cfg(windows)]
+unsafe fn show_context_menu(hwnd: HWND) {
+    let Ok(menu) = CreatePopupMenu() else { return };
+    let _ = AppendMenuW(menu, MF_STRING, IDM_TILE, w!("타일 정렬\tWin+Shift+G"));
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = AppendMenuW(menu, MF_STRING, IDM_EXIT, w!("종료"));
+
+    let _ = SetForegroundWindow(hwnd);
+
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, None);
+    let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
+    let _ = DestroyMenu(menu);
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_TRAY => {
+            match lparam.0 as u32 {
+                WM_RBUTTONUP => show_context_menu(hwnd),
+                WM_LBUTTONDBLCLK => tile_windows(),
+                _ => {}
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            match wparam.0 & 0xFFFF {
+                IDM_TILE => tile_windows(),
+                IDM_EXIT => {
+                    remove_tray_icon(hwnd);
+                    PostQuitMessage(0);
+                }
+                _ => {}
+            }
+            LRESULT(0)
+        }
+        WM_HOTKEY => {
+            tile_windows();
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            remove_tray_icon(hwnd);
+            PostQuitMessage(0);
+            LRESULT(0)
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 
@@ -259,45 +319,48 @@ fn main() {
         return;
     }
 
-    // Single instance check (only for daemon mode)
     let _mutex = match ensure_single_instance() {
         Some(h) => h,
         None => return,
     };
 
     unsafe {
-        // Register Ctrl+C handler
-        let _ = SetConsoleCtrlHandler(Some(ctrl_handler), true);
+        let class_name = w!("TgTileClass");
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(wnd_proc),
+            lpszClassName: class_name,
+            ..Default::default()
+        };
+        RegisterClassW(&wc);
 
-        // Register hotkey: Win+Shift+G
-        let hotkey_id = 1;
-        let result = RegisterHotKey(
+        let Ok(hwnd) = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            class_name,
+            w!("tg-tile"),
+            WINDOW_STYLE::default(),
+            0, 0, 0, 0,
             None,
-            hotkey_id,
-            MOD_WIN | MOD_SHIFT | MOD_NOREPEAT,
-            0x47, // 'G' virtual key code
-        );
+            None,
+            None,
+            None,
+        ) else { return };
 
-        if result.is_err() {
-            println!("[tg-tile] 핫키 충돌: Win+Shift+G가 이미 사용 중입니다");
+        add_tray_icon(hwnd);
+
+        if RegisterHotKey(Some(hwnd), HOTKEY_ID, MOD_WIN | MOD_SHIFT | MOD_NOREPEAT, 0x47).is_err() {
+            remove_tray_icon(hwnd);
             return;
         }
 
-        println!("[tg-tile] 핫키 등록: Win+Shift+G");
-        println!("[tg-tile] 대기 중... (Ctrl+C로 종료)");
-
-        // Message loop
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            if msg.message == WM_HOTKEY && msg.wParam.0 == hotkey_id as usize {
-                tile_windows();
-            }
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
 
-        // Cleanup
-        let _ = UnregisterHotKey(None, hotkey_id);
+        let _ = UnregisterHotKey(Some(hwnd), HOTKEY_ID);
+        remove_tray_icon(hwnd);
         let _ = CloseHandle(_mutex);
-        println!("\n[tg-tile] 종료");
     }
 }
 
@@ -326,17 +389,14 @@ mod tests {
 
     #[test]
     fn test_grid_2_windows() {
-        // 1 row x 2 cols
         let rects = calculate_grid(2, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 2);
-        // Left half: 0..958, right half: 962..1920
         assert_eq!(rects[0], Rect { x: 0, y: 0, w: 958, h: 1080 });
         assert_eq!(rects[1], Rect { x: 962, y: 0, w: 958, h: 1080 });
     }
 
     #[test]
     fn test_grid_4_windows() {
-        // 2x2 grid
         let rects = calculate_grid(4, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 4);
         assert_eq!(rects[0], Rect { x: 0, y: 0, w: 958, h: 538 });
@@ -347,35 +407,28 @@ mod tests {
 
     #[test]
     fn test_grid_3_windows_last_row_fills() {
-        // 2 rows x 2 cols, last row has 1 window → takes full width
         let rects = calculate_grid(3, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 3);
-        // Top row: 2 windows, each 958 wide
         assert_eq!(rects[0], Rect { x: 0, y: 0, w: 958, h: 538 });
         assert_eq!(rects[1], Rect { x: 962, y: 0, w: 958, h: 538 });
-        // Bottom row: 1 window, full width
         assert_eq!(rects[2], Rect { x: 0, y: 542, w: 1920, h: 538 });
     }
 
     #[test]
     fn test_grid_5_windows_last_row_2_of_3() {
-        // 2 rows x 3 cols, last row has 2 windows splitting 3 cols worth of space
         let rects = calculate_grid(5, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 5);
-        // Top row: 3 windows
-        let col_w = (1920 - 4 * 2) / 3; // (1920 - 8) / 3 = 637
+        let col_w = (1920 - 4 * 2) / 3;
         assert_eq!(rects[0].w, col_w);
         assert_eq!(rects[1].w, col_w);
         assert_eq!(rects[2].w, col_w);
-        // Bottom row: 2 windows splitting full width
-        let bottom_w = (1920 - 4) / 2; // 958
+        let bottom_w = (1920 - 4) / 2;
         assert_eq!(rects[3].w, bottom_w);
         assert_eq!(rects[4].w, bottom_w);
     }
 
     #[test]
     fn test_grid_with_offset() {
-        // Work area starting at (100, 50)
         let rects = calculate_grid(1, 100, 50, 1820, 1030, 4);
         assert_eq!(rects[0], Rect { x: 100, y: 50, w: 1820, h: 1030 });
     }
