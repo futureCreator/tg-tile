@@ -182,12 +182,12 @@ fn tile_windows() {
         for (hwnd, rect) in hwnds.iter().zip(rects.iter()) {
             let _ = SetWindowPos(
                 *hwnd,
-                Some(HWND::default()),
+                Some(HWND_TOP),
                 rect.x,
                 rect.y,
                 rect.w,
                 rect.h,
-                SWP_NOZORDER | SWP_NOACTIVATE,
+                SWP_NOACTIVATE,
             );
         }
     }
