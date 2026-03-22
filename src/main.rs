@@ -190,6 +190,12 @@ fn tile_windows() {
                 SWP_NOACTIVATE,
             );
         }
+
+        // Hotkey handler has foreground rights — activate first window
+        // to bring all Telegram windows above other apps
+        if let Some(&first) = hwnds.first() {
+            let _ = SetForegroundWindow(first);
+        }
     }
 }
 
