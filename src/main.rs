@@ -267,7 +267,7 @@ unsafe fn show_context_menu(hwnd: HWND) {
 
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
-    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, None);
+    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, Some(0), hwnd, None);
     let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(menu);
 }
