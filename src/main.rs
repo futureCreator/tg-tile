@@ -242,7 +242,7 @@ unsafe fn add_tray_icon(hwnd: HWND) {
         szTip: make_tip("tg-tile (Win+Shift+G)"),
         ..Default::default()
     };
-    Shell_NotifyIconW(NIM_ADD, &nid);
+    let _ = Shell_NotifyIconW(NIM_ADD, &nid);
 }
 
 #[cfg(windows)]
@@ -253,7 +253,7 @@ unsafe fn remove_tray_icon(hwnd: HWND) {
         uID: 1,
         ..Default::default()
     };
-    Shell_NotifyIconW(NIM_DELETE, &nid);
+    let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
 }
 
 #[cfg(windows)]
@@ -267,7 +267,7 @@ unsafe fn show_context_menu(hwnd: HWND) {
 
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
-    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, Some(0), hwnd, None);
+    let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, Some(0), hwnd, None);
     let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(menu);
 }
