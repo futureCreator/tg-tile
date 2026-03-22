@@ -22,6 +22,10 @@ tg-tile.exe
 
 ## Changelog
 
+### v0.1.4 - 2026-03-22
+- feat: 타일링 시 텔레그램 창을 화면 맨 앞으로 가져오기
+- feat: 시스템 트레이 커스텀 아이콘 (텔레그램 블루 2x2 그리드)
+
 ### v0.1.3 - 2026-03-22
 - fix: `Shell_NotifyIconW`, `TrackPopupMenu` 미사용 BOOL 반환값 경고 제거
 
