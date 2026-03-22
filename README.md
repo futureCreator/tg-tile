@@ -22,6 +22,9 @@ tg-tile.exe
 
 ## Changelog
 
+### v0.1.3 - 2026-03-22
+- fix: `Shell_NotifyIconW`, `TrackPopupMenu` 미사용 BOOL 반환값 경고 제거
+
 ### v0.1.2 - 2026-03-22
 - feat: 시스템 트레이 지원 (콘솔 창 없이 백그라운드 실행)
 - feat: 3개 창 배열 시 2x2 대신 1행 3열 사용
