@@ -36,7 +36,7 @@ fn calculate_grid(n: usize, work_x: i32, work_y: i32, work_w: i32, work_h: i32, 
         return vec![];
     }
 
-    let cols = (n as f64).sqrt().ceil() as usize;
+    let cols = if n <= 3 { n } else { (n as f64).sqrt().ceil() as usize };
     let rows = (n as f64 / cols as f64).ceil() as usize;
 
     // Number of windows in the last row
@@ -406,12 +406,14 @@ mod tests {
     }
 
     #[test]
-    fn test_grid_3_windows_last_row_fills() {
+    fn test_grid_3_windows_single_row() {
+        // 1 row x 3 cols
         let rects = calculate_grid(3, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 3);
-        assert_eq!(rects[0], Rect { x: 0, y: 0, w: 958, h: 538 });
-        assert_eq!(rects[1], Rect { x: 962, y: 0, w: 958, h: 538 });
-        assert_eq!(rects[2], Rect { x: 0, y: 542, w: 1920, h: 538 });
+        let col_w = (1920 - 4 * 2) / 3; // 637
+        assert_eq!(rects[0], Rect { x: 0, y: 0, w: col_w, h: 1080 });
+        assert_eq!(rects[1], Rect { x: col_w + 4, y: 0, w: col_w, h: 1080 });
+        assert_eq!(rects[2], Rect { x: (col_w + 4) * 2, y: 0, w: col_w, h: 1080 });
     }
 
     #[test]
