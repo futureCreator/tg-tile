@@ -36,6 +36,21 @@ fn calculate_grid(n: usize, work_x: i32, work_y: i32, work_w: i32, work_h: i32, 
         return vec![];
     }
 
+    // Special case: 5 windows = 4 equal columns, 4th column split into 2 rows
+    if n == 5 {
+        let col_w = (work_w - gap * 3) / 4;
+        let full_h = work_h;
+        let half_h = (work_h - gap) / 2;
+
+        return vec![
+            Rect { x: work_x, y: work_y, w: col_w, h: full_h },
+            Rect { x: work_x + (col_w + gap), y: work_y, w: col_w, h: full_h },
+            Rect { x: work_x + (col_w + gap) * 2, y: work_y, w: col_w, h: full_h },
+            Rect { x: work_x + (col_w + gap) * 3, y: work_y, w: col_w, h: half_h },
+            Rect { x: work_x + (col_w + gap) * 3, y: work_y + half_h + gap, w: col_w, h: half_h },
+        ];
+    }
+
     let cols = if n <= 4 { n } else { (n as f64).sqrt().ceil() as usize };
     let rows = (n as f64 / cols as f64).ceil() as usize;
 
@@ -445,16 +460,28 @@ mod tests {
     }
 
     #[test]
-    fn test_grid_5_windows_last_row_2_of_3() {
+    fn test_grid_5_windows_4col_split() {
+        // 4 equal columns, 4th column split into 2 rows
+        // ┌────┬────┬────┬────┐
+        // │    │    │    │ W4 │
+        // │ W1 │ W2 │ W3 ├────┤
+        // │    │    │    │ W5 │
+        // └────┴────┴────┴────┘
         let rects = calculate_grid(5, 0, 0, 1920, 1080, 4);
         assert_eq!(rects.len(), 5);
-        let col_w = (1920 - 4 * 2) / 3;
-        assert_eq!(rects[0].w, col_w);
-        assert_eq!(rects[1].w, col_w);
-        assert_eq!(rects[2].w, col_w);
-        let bottom_w = (1920 - 4) / 2;
-        assert_eq!(rects[3].w, bottom_w);
-        assert_eq!(rects[4].w, bottom_w);
+
+        let col_w = (1920 - 4 * 3) / 4; // 477
+        let full_h = 1080;
+        let half_h = (1080 - 4) / 2; // 538
+
+        // W1-W3: full height columns
+        assert_eq!(rects[0], Rect { x: 0, y: 0, w: col_w, h: full_h });
+        assert_eq!(rects[1], Rect { x: col_w + 4, y: 0, w: col_w, h: full_h });
+        assert_eq!(rects[2], Rect { x: (col_w + 4) * 2, y: 0, w: col_w, h: full_h });
+
+        // W4-W5: 4th column, split vertically
+        assert_eq!(rects[3], Rect { x: (col_w + 4) * 3, y: 0, w: col_w, h: half_h });
+        assert_eq!(rects[4], Rect { x: (col_w + 4) * 3, y: half_h + 4, w: col_w, h: half_h });
     }
 
     #[test]
