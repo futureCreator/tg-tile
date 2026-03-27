@@ -197,11 +197,13 @@ const IDM_EXIT: usize = 1002;
 
 #[cfg(windows)]
 fn tile_windows() {
-    let hwnds = find_telegram_windows();
+    let mut hwnds = find_telegram_windows();
 
     if hwnds.is_empty() {
         return;
     }
+
+    sort_main_window_last(&mut hwnds);
 
     unsafe {
         for &hwnd in &hwnds {
