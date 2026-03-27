@@ -146,6 +146,27 @@ fn is_telegram_process(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
+fn get_window_title(hwnd: HWND) -> String {
+    unsafe {
+        let len = GetWindowTextLengthW(hwnd);
+        if len == 0 {
+            return String::new();
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, &mut buf);
+        String::from_utf16_lossy(&buf[..copied as usize])
+    }
+}
+
+#[cfg(windows)]
+fn sort_main_window_last(hwnds: &mut Vec<HWND>) {
+    if let Some(pos) = hwnds.iter().position(|&hwnd| get_window_title(hwnd) == "Telegram") {
+        let main_hwnd = hwnds.remove(pos);
+        hwnds.push(main_hwnd);
+    }
+}
+
+#[cfg(windows)]
 fn get_work_area() -> (i32, i32, i32, i32) {
     unsafe {
         let mut cursor = POINT::default();
